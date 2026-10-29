@@ -182,7 +182,7 @@ class Library:
             storage=GameStorage(self.library,self.rendered)
             storage.deletion_paths(game_id)
             folder=self.workspace(game_id)
-            metadata=json.loads((folder/'game.json').read_text()) if (folder/'game.json').is_file() else None
+            metadata=json.loads((folder/'game.json').read_text(encoding='utf-8')) if (folder/'game.json').is_file() else None
             player=self._players.get(game_id)
             if player is not None:
                 if player.poll() is None:
