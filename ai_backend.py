@@ -2,11 +2,13 @@
 from pathlib import Path
 import os
 import subprocess
+import sys
 import tempfile
 import numpy as np
 from PIL import Image
 
-ROOT=Path(__file__).resolve().parent
+ROOT=(Path(sys.executable).resolve().parent if getattr(sys,'frozen',False)
+      else Path(__file__).resolve().parent)
 MODEL='realesrgan-x4plus-anime'
 SCALE=4
 PADDING=8

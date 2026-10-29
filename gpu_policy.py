@@ -2,9 +2,11 @@
 from __future__ import annotations
 import ctypes as C
 import json,os,threading,time,uuid
+import sys
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parent
+ROOT=(Path(sys.executable).resolve().parent if getattr(sys,'frozen',False)
+      else Path(__file__).resolve().parent)
 SETTINGS=ROOT/'library/settings.json'
 MODES=('auto','dedicated','integrated','system')
 DEFAULTS={'render_gpu':'auto','enhance_gpu':'auto'}
@@ -97,13 +99,18 @@ def player_java(mode):
     if not executable.exists():raise RuntimeError('The private player runtime is missing. Run python tools/setup_runtime.py.')
     if os.name=='nt':
         import winreg
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,r'Software\Microsoft\DirectX\UserGpuPreferences',0,winreg.KEY_SET_VALUE) as key:
-            if mode=='system':
-                try:winreg.DeleteValue(key,str(executable))
-                except FileNotFoundError:pass
-            else:
-                preference=1 if mode=='integrated' else 2
-                winreg.SetValueEx(key,str(executable),0,winreg.REG_SZ,f'GpuPreference={preference};')
+        try:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,r'Software\Microsoft\DirectX\UserGpuPreferences',0,winreg.KEY_SET_VALUE) as key:
+                if mode=='system':
+                    try:winreg.DeleteValue(key,str(executable))
+                    except FileNotFoundError:pass
+                else:
+                    preference=1 if mode=='integrated' else 2
+                    winreg.SetValueEx(key,str(executable),0,winreg.REG_SZ,f'GpuPreference={preference};')
+        except OSError:
+            # A locked-down Windows account may reject the per-app GPU preference.
+            # Keep playback usable with Windows' existing default GPU selection.
+            pass
     return str(executable)
 
 def expected_device(mode):
