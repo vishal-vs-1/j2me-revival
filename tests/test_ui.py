@@ -11,6 +11,16 @@ from app import App
 from ui_widgets import ScrollableFrame
 
 
+def destroy_widget(widget):
+    try:
+        widget.destroy()
+    except tk.TclError:
+        # Python 3.14 can retain Tcl callback names after a child widget has
+        # already removed them. Still ask Tk to remove the native widget.
+        try:widget.tk.call('destroy',widget._w)
+        except tk.TclError:pass
+
+
 @pytest.fixture(scope='module')
 def display():
     try:window=tk.Tk()
@@ -18,7 +28,7 @@ def display():
     window.title('JAR Revival UI test — test data only')
     yield window
     for callback in window.tk.call('after','info'):window.after_cancel(callback)
-    window.destroy()
+    destroy_widget(window)
 
 
 @pytest.fixture
@@ -26,7 +36,7 @@ def root(display):
     display.minsize(1,1)
     yield display
     for callback in display.tk.call('after','info'):display.after_cancel(callback)
-    for child in display.winfo_children():child.destroy()
+    for child in display.winfo_children():destroy_widget(child)
 
 
 class PreviewLibrary:

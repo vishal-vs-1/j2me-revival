@@ -55,13 +55,19 @@ class StartupTests(unittest.TestCase):
     def test_both_players_use_original_by_default_and_optional_selected_path(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as work:
             work=Path(work);library=Library(work/'library',work/'rendered')
+            app_root=work/'app'
+            (app_root/'build').mkdir(parents=True)
+            (app_root/'build'/'jme-player.jar').touch()
+            gpu_runtime=app_root/'tools'/'gpu'
+            gpu_runtime.mkdir(parents=True)
+            (gpu_runtime/'lwjgl-test.jar').touch()
             game={'id':'0'*64,'name':'Test','status':'Ready','width':176,'height':220,
                   'startup':{'note':'Diagnostic startup selection'}}
             folder=library.workspace(game['id']);(folder/'logs').mkdir(parents=True);(folder/'saves').mkdir()
             chosen=work/'selected.jar'
             for renderer in ['gpu','cpu']:
                 game['renderer']=renderer
-                with patch.object(library,'prepare_startup',return_value=chosen),patch('engine.subprocess.Popen') as launch,\
+                with patch('engine.ROOT',app_root),patch.object(library,'prepare_startup',return_value=chosen),patch('engine.subprocess.Popen') as launch,\
                      patch('gpu_policy.player_java',return_value=locate_java()),patch('gpu_policy.expected_device',return_value=None):
                     library.launch(game)
                     arguments=launch.call_args.args[0]
