@@ -1,4 +1,4 @@
-"""Double-click Start.cmd to open the persistent desktop game library."""
+"""Persistent desktop game library and local artwork preparation."""
 import json
 import os
 import queue
@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from engine import Library, ROOT
+from app_paths import DATA_ROOT
 from gpu_policy import settings as gpu_settings, save_settings as save_gpu_settings, devices as gpu_devices
 from ui_widgets import ScrollableFrame, TabNavigation, LibraryRowActions
 
@@ -709,7 +710,7 @@ class App:
 def main():
     # A second launcher could otherwise keep converting on the same GPU during play.
     import msvcrt
-    lock_path=ROOT/'library/.launcher.lock'
+    lock_path=DATA_ROOT/'library/.launcher.lock'
     lock_path.parent.mkdir(parents=True,exist_ok=True)
     with lock_path.open('a+b') as lock:
         lock.seek(0,2)

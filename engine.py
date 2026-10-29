@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import threading
 import time
 import zipfile
@@ -24,11 +23,11 @@ from runtime_assets.contracts import ncnn_recipe, pixel_recipe
 from runtime_assets.service import AssetService
 from game_storage import GameStorage, validate_game_id
 from execution_policy import java_execution_arguments
+from app_paths import RESOURCE_ROOT, DATA_ROOT
 
-ROOT = (Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False)
-       else Path(__file__).resolve().parent)
-LIBRARY = ROOT / 'library'
-RENDERED = ROOT / 'rendered-games'
+ROOT = RESOURCE_ROOT
+LIBRARY = DATA_ROOT / 'library'
+RENDERED = DATA_ROOT / 'rendered-games'
 RECIPE = 'scale2x-rgba-v1-4x'
 MAX_PIXELS = 4_194_304
 

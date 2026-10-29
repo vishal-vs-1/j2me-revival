@@ -3,10 +3,13 @@ from pathlib import Path
 import hashlib
 import json
 import shutil
+import sys
 import urllib.request
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[1]
+if not getattr(sys, 'frozen', False):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app_paths import DATA_ROOT as ROOT
 URL = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip'
 
 
@@ -32,7 +35,7 @@ def install(progress=print):
     executable=list(target.rglob('realesrgan-ncnn-vulkan.exe'))
     if not executable: raise RuntimeError('Downloaded archive has no expected runtime')
     (target/'download.json').write_text(json.dumps({'source':URL,'archive_sha256':digest},indent=2))
-    progress('Local AI is installed. Select AI cartoon when importing a new game.')
+    progress('Local AI is installed. Choose AI cartoon in Artwork, then Prepare for an existing game or import a new game.')
     return executable[0]
 
 

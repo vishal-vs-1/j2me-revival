@@ -2,12 +2,11 @@
 from __future__ import annotations
 import ctypes as C
 import json,os,threading,time,uuid
-import sys
 from pathlib import Path
+from app_paths import RESOURCE_ROOT, DATA_ROOT
 
-ROOT=(Path(sys.executable).resolve().parent if getattr(sys,'frozen',False)
-      else Path(__file__).resolve().parent)
-SETTINGS=ROOT/'library/settings.json'
+ROOT=RESOURCE_ROOT
+SETTINGS=DATA_ROOT/'library/settings.json'
 MODES=('auto','dedicated','integrated','system')
 DEFAULTS={'render_gpu':'auto','enhance_gpu':'auto'}
 _lock=threading.RLock()

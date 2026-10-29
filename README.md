@@ -68,7 +68,9 @@ This is the same 168 × 121 logo image from a local Bounce Tales import, shown a
 
 ## Try it on Windows
 
-You need Windows 10 or 11, Python 3.10+ with Tkinter, a JDK 17+ with `javac` and `jlink`, and Git. The first build downloads the pinned emulator source and graphics libraries.
+For the portable Windows ZIP, extract the entire folder and open **JAR Revival.exe**. **README.txt** sits beside the app and gives the demo, AI setup, and upgrade steps. Support files are in `app/`; saves, settings, artwork, and downloaded AI are in `data/`.
+
+To run from source, you need Windows 10 or 11, Python 3.10+ with Tkinter, a JDK 17+ with `javac` and `jlink`, and Git. The first build downloads the pinned emulator source and graphics libraries.
 
 ~~~powershell
 py -m venv .venv
@@ -77,10 +79,20 @@ py -m venv .venv
 .\.venv\Scripts\python.exe app.py
 ~~~
 
-After launching, click **Import demo** in the sidebar to try the included synthetic game. It exercises the player without bundling a commercial title and is not evidence of broad compatibility. To use your own game, click **Add game** and choose a JAR you have the right to use. For AI artwork, run `tools/setup_ai.py` once; **Fast Pixel** works without the model.
+After launching, click **Import demo** in the sidebar to add the included synthetic game to your library; it does not appear there automatically. To use your own game, click **Add game** and choose a JAR you have the right to use. The demo exercises the player without bundling a commercial title and is not evidence of broad compatibility.
 
-1. Choose an artwork style and select the game in your library.
-2. Wait for its import to finish, then choose **Play enhanced**. Controls appear in the player window.
+### Optional AI Cartoon
+
+**Fast Pixel** works immediately and offline. AI Cartoon's runtime and model are not included in the portable ZIP. The first AI setup needs an internet connection and downloads the free Real-ESRGAN runtime and model into `data/tools/ai` in the portable app, or `tools/ai` in a source checkout. Game files and artwork stay local.
+
+- In the portable Windows app, open the **Artwork** tab, click **AI setup**, and wait for the status to say that local AI is installed.
+- In a source checkout, run `tools/setup_ai.py` after building the player.
+- Then choose **AI cartoon** in the Artwork style selector. For a game already in your library, select it and click **Prepare**. For a new game, choose the style before clicking **Add game** or **Import demo**.
+
+AI Cartoon requires a working Vulkan-capable graphics driver. Fast Pixel does not.
+
+1. Choose an artwork style and select or import a game.
+2. Wait for its import or preparation to finish, then choose **Play enhanced**. Controls appear in the player window.
 
 ## What to expect
 
@@ -92,6 +104,7 @@ Only import games you are allowed to use. A JAR contains executable Java code; t
 
 ## For contributors
 
+- After building the player, create the portable ZIP with `python tools/package_windows.py` (requires PyInstaller 6.22.3). The ZIP and checksum are written to `build/windows-release/`.
 - [Project flow and component responsibilities](docs/PROJECT_FLOW.md)
 - [Asset decoding and runtime discovery](docs/ASSET_DECODING.md)
 - [Development setup and verification](docs/DEVELOPMENT.md)

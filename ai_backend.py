@@ -2,13 +2,12 @@
 from pathlib import Path
 import os
 import subprocess
-import sys
 import tempfile
 import numpy as np
 from PIL import Image
+from app_paths import DATA_ROOT
 
-ROOT=(Path(sys.executable).resolve().parent if getattr(sys,'frozen',False)
-      else Path(__file__).resolve().parent)
+ROOT=DATA_ROOT
 MODEL='realesrgan-x4plus-anime'
 SCALE=4
 PADDING=8
@@ -97,7 +96,7 @@ def _restore(output, image, alpha):
 
 def upscale(image, workdir, alpha):
     binary=executable()
-    if binary is None: raise RuntimeError('Select Install free AI first, or use Fast pixel enhancement.')
+    if binary is None: raise RuntimeError('Open the Artwork tab and click AI setup first, or use Fast pixel.')
     with tempfile.TemporaryDirectory(prefix='inference-',dir=workdir) as temp:
         temp=Path(temp)
         source=temp/'input.png'; output=temp/'output.png'
@@ -112,7 +111,7 @@ def upscale_many(images, workdir, *, processing_threads=1, model=MODEL):
     if not images:return []
     if len(images)>512:raise ValueError('An inference batch is limited to 512 images')
     binary=executable()
-    if binary is None: raise RuntimeError('Select Install free AI first, or use Fast pixel enhancement.')
+    if binary is None: raise RuntimeError('Open the Artwork tab and click AI setup first, or use Fast pixel.')
     with tempfile.TemporaryDirectory(prefix='inference-batch-',dir=workdir) as temp:
         temp=Path(temp); source=temp/'input'; output=temp/'output'
         source.mkdir();output.mkdir()
