@@ -2,6 +2,7 @@ from pathlib import Path
 import os,subprocess,sys,argparse
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from engine import locate_java,Library,runtime_arguments
+from platform_support import java_binary_name
 l=Library();g=next(g for g in l.games() if 'Bean' in g['name']);folder=l.workspace(g['id'])
 classes=ROOT/'build/classes';out=ROOT/'build/mrbean-gpu';out.mkdir(exist_ok=True)
 runtime_pack=out/'runtime-pack'
@@ -23,7 +24,7 @@ before={f.name for f in (runtime_pack/'original-assets').glob('*.png')}
 for run in range(args.runs):
     logfile=out/f'probe-{run+1}.log'
     with logfile.open('w') as log:
-        result=subprocess.run([str(ROOT/'tools/runtime/bin/java.exe'),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
+        result=subprocess.run([str(ROOT/'tools/runtime/bin'/java_binary_name()),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
             '-Djava.util.prefs.PreferencesFactory=RuntimePreferencesFactory','-Djme.gpu=true','-Djme.scale=4',
             '-Dprobe.visible='+str(args.visible).lower(),'-Dprobe.directStartup='+str(args.clean_startup).lower(),
             *runtime_arguments(g['id']),f'-Djme.stats={out}/sample.stats.json',f'-Djme.pack={runtime_pack}',

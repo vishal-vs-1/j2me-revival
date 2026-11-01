@@ -281,9 +281,12 @@ public final class GpuRenderer {
             float scale=Math.min((float)width/image.w,(float)height/image.h);
             float w=image.w*scale,h=image.h*scale;
             glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,image.texture);
-            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+            int filter = S > 1 ? GL_LINEAR : GL_NEAREST;
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,filter);
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,filter);
             glColor4f(1,1,1,1);quad((width-w)/2,(height-h)/2,w,h,0,1,1,0);
             glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
         }
     }
     public static synchronized BufferedImage readback(PlatformImage image) {

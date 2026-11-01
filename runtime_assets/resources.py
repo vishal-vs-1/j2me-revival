@@ -26,9 +26,20 @@ def host_memory():
                     'logical_cpus':os.cpu_count() or 1}
     else:
         try:
+            available = None
+            if os.path.exists('/proc/meminfo'):
+                try:
+                    with open('/proc/meminfo', 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.startswith('MemAvailable:'):
+                                available = int(line.split()[1]) * 1024
+                                break
+                except OSError: pass
             size=os.sysconf('SC_PAGE_SIZE')
+            if available is None:
+                available = os.sysconf('SC_AVPHYS_PAGES') * size
             return {'total_bytes':os.sysconf('SC_PHYS_PAGES')*size,
-                    'available_bytes':os.sysconf('SC_AVPHYS_PAGES')*size,'logical_cpus':os.cpu_count() or 1}
+                    'available_bytes':available,'logical_cpus':os.cpu_count() or 1}
         except (OSError,ValueError,AttributeError):pass
     return {'total_bytes':0,'available_bytes':0,'logical_cpus':os.cpu_count() or 1}
 

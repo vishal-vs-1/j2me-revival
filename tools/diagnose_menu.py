@@ -3,6 +3,7 @@ from pathlib import Path
 import json,os,shutil,subprocess,sys,time
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from engine import Library,locate_java
+from platform_support import java_binary_name
 
 library=Library();game=next(g for g in library.games() if 'Bean' in g['name'])
 pack=library.workspace(game['id']);out=ROOT/'build'/('menu-diagnosis-'+str(time.time_ns()));out.mkdir()
@@ -15,7 +16,7 @@ for option in ['off','on']:
     text=config.read_text();text=text.replace('compatrepaintonsetcurrent:off','compatrepaintonsetcurrent:'+option)
     config.write_text(text)
     with (out/(option+'.log')).open('w') as log:
-        process=subprocess.run([str(ROOT/'tools/runtime/bin/java.exe'),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
+        process=subprocess.run([str(ROOT/'tools/runtime/bin'/java_binary_name()),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
             '-Djme.gpu=true','-Djme.hidden=true','-Djme.stopSeconds=8','-Djme.scale=4',f'-Djme.pack={pack}',
             f'-Djme.textures={library.texture_dir(pack,game["backend"])}','-cp',classpath,'MenuControlProbe',
             str(library.library/game['id']/'game.jar'),'176','220','Mr Bean menu diagnosis'],cwd=folder,stdout=log,stderr=subprocess.STDOUT,timeout=18)
