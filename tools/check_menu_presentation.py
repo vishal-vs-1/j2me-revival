@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse, os, subprocess, sys, time
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from engine import Library,locate_java,runtime_arguments
+from platform_support import java_binary_name
 from startup_cleaner import MRBEAN
 library=Library();game=next(g for g in library.games() if g['id']==MRBEAN);pack=library.workspace(game['id'])
 parser=argparse.ArgumentParser();parser.add_argument('--hidden',action='store_true',
@@ -15,7 +16,7 @@ cp=str(ROOT/'build/classes')+os.pathsep+str(ROOT/'tools/gpu/*')
 subprocess.run([locate_java('javac'),'--release','8','-cp',cp,'-d',str(ROOT/'build/classes'),
     str(ROOT/'tests/RuntimePreferencesFactory.java'),str(ROOT/'tests/MenuPresentationProbe.java')],check=True,capture_output=True)
 with (out/'check.log').open('w') as log:
-    process=subprocess.run([str(ROOT/'tools/runtime/bin/java.exe'),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
+    process=subprocess.run([str(ROOT/'tools/runtime/bin'/java_binary_name()),'--enable-native-access=ALL-UNNAMED','-Dfile.encoding=ISO_8859_1',
         '-Djava.util.prefs.PreferencesFactory=RuntimePreferencesFactory',
         '-Djme.gpu=true','-Djme.hidden='+str(options.hidden).lower(),
         '-Dprobe.strictLatency='+str(not options.hidden).lower(),'-Djme.stopSeconds=40','-Djme.scale=4',

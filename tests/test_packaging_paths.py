@@ -47,9 +47,10 @@ assert setup_ai.ROOT == ai_backend.ROOT == home / 'data'
     def test_ai_install_and_lookup_use_same_data_folder_without_repeat_download(self):
         from tools import setup_ai
         import ai_backend
+        from platform_support import ncnn_binary_name
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:
-            archive.writestr('runtime/realesrgan-ncnn-vulkan.exe', b'fixture executable')
+            archive.writestr(f'runtime/{ncnn_binary_name()}', b'fixture executable')
             archive.writestr('runtime/models/realesrgan-x4plus-anime.param', b'fixture model')
         with tempfile.TemporaryDirectory(dir=ROOT / 'build') as folder:
             data = Path(folder) / 'data'

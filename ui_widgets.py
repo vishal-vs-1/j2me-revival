@@ -112,6 +112,9 @@ class LibraryRowActions:
                 button.place(x=x+4+index*40,y=y+(h-size)//2,width=size,height=size)
 
 
+from platform_support import IS_LINUX
+
+
 class TabNavigation(tk.Frame):
     """Explicitly painted navigation independent of native notebook tab elements."""
     def __init__(self,parent,notebook,*,bg):
@@ -121,7 +124,7 @@ class TabNavigation(tk.Frame):
         for index,tab in enumerate(notebook.tabs()):
             self.columnconfigure(index,weight=1,uniform='tabs')
             button=tk.Button(self,text=notebook.tab(tab,'text'),width=1,
-                font=('Segoe UI',10,'bold'),padx=4,pady=10,relief='flat',borderwidth=0,
+                font=('Segoe UI',9 if IS_LINUX else 10,'bold'),padx=4,pady=4 if IS_LINUX else 6,relief='flat',borderwidth=0,
                 highlightthickness=1,highlightbackground=bg,highlightcolor='#84e4c7',cursor='hand2',
                 command=lambda i=index:notebook.select(i))
             button.grid(row=0,column=index,sticky='ew',padx=(0,4 if index<len(notebook.tabs())-1 else 0))

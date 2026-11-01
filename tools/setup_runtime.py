@@ -3,10 +3,11 @@ from pathlib import Path
 import subprocess,sys,json
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from engine import locate_java
+from platform_support import java_binary_name
 
 def install():
     target=ROOT/'tools/runtime'
-    if (target/'bin/java.exe').exists():return target
+    if (target/'bin'/java_binary_name()).exists():return target
     if target.exists():raise RuntimeError('An incomplete runtime exists at tools/runtime. Preserve or rename it before rebuilding.')
     linker=locate_java('jlink')
     print('Creating the private player Java runtime…',flush=True)

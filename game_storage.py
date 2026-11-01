@@ -22,7 +22,8 @@ class GameStorage:
     def _owned(path,parent):
         # Reject redirected game roots and data entries before any recursive
         # removal. shutil.rmtree itself does not traverse nested directory links.
-        if path.is_symlink() or path.is_junction():
+        is_junction = getattr(path, 'is_junction', lambda: False)()
+        if path.is_symlink() or is_junction:
             raise ValueError('A linked game folder cannot be deleted from the library.')
         resolved=path.resolve()
         if not resolved.is_relative_to(parent) or resolved==parent:
