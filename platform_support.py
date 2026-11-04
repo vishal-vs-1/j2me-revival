@@ -11,6 +11,8 @@ IS_WINDOWS = sys.platform == 'win32'
 IS_LINUX = sys.platform.startswith('linux')
 IS_MACOS = sys.platform == 'darwin'
 
+from window_scaling import calculate_window_geometry, get_display_scale_ratio
+
 
 def java_binary_name(tool='java') -> str:
     """Return platform executable name for Java tools (e.g., 'java.exe' on Windows, 'java' on Linux)."""

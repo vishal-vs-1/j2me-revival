@@ -1,6 +1,34 @@
 """Small reusable Tk containers; scrolling is independent of library/game logic."""
 import tkinter as tk
 from tkinter import ttk
+from ui_tokens import (
+    FONT_BODY_MUTED, FONT_TAB_BUTTON, PAD_TAB_BUTTON_PADX, PAD_TAB_BUTTON_PADY,
+    WIDTH_TREEVIEW_ACTIONS
+)
+
+
+def bind_dynamic_wraplength(container, *labels, padding=20, min_width=100):
+    """Dynamically adjust wraplength on labels whenever container width changes."""
+    def _update(event=None):
+        if event is not None and event.widget is not container:
+            return
+        ev_w = getattr(event, 'width', None)
+        w = ev_w if isinstance(ev_w, int) and ev_w > 1 else container.winfo_width()
+        if not isinstance(w, int) or w <= 1:
+            return
+        target = max(min_width, w - padding)
+        for label in labels:
+            if not label.winfo_exists():
+                continue
+            current = int(label.cget('wraplength'))
+            if abs(current - target) > 4:
+                label.configure(wraplength=target)
+
+    container.bind('<Configure>', _update, add='+')
+    container.bind('<Map>', _update, add='+')
+    if container.winfo_width() > 1:
+        _update()
+
 
 
 class HoverLabel:
@@ -19,7 +47,7 @@ class HoverLabel:
         if not self.widget.winfo_exists():return
         self.window=tk.Toplevel(self.widget);self.window.overrideredirect(True)
         label=tk.Label(self.window,text=self.text,bg='#263649',fg='#eff5fc',
-                       font=('Segoe UI',9),padx=8,pady=5,relief='solid',borderwidth=1)
+                       font=FONT_BODY_MUTED,padx=8,pady=5,relief='solid',borderwidth=1)
         label.pack();self.window.update_idletasks()
         x=min(self.widget.winfo_rootx(),self.widget.winfo_screenwidth()-self.window.winfo_reqwidth()-8)
         y=self.widget.winfo_rooty()+self.widget.winfo_height()+5
@@ -84,9 +112,9 @@ class LibraryRowActions:
 
     def refresh(self):
         self.pending=None
-        action_width=84
+        action_width=WIDTH_TREEVIEW_ACTIONS
         self.tree.column('actions',width=action_width,minwidth=action_width,stretch=False)
-        self.tree.column('#0',width=max(1,self.tree.winfo_width()-action_width-4),minwidth=1,stretch=False)
+        self.tree.column('#0',minwidth=1,stretch=True)
         visible={self.tree.identify_row(y) for y in range(0,self.tree.winfo_height(),10)}-{''}
         for identity in set(self.buttons)-visible:
             for button in self.buttons.pop(identity):button.destroy()
@@ -112,9 +140,6 @@ class LibraryRowActions:
                 button.place(x=x+4+index*40,y=y+(h-size)//2,width=size,height=size)
 
 
-from platform_support import IS_LINUX
-
-
 class TabNavigation(tk.Frame):
     """Explicitly painted navigation independent of native notebook tab elements."""
     def __init__(self,parent,notebook,*,bg):
@@ -124,7 +149,7 @@ class TabNavigation(tk.Frame):
         for index,tab in enumerate(notebook.tabs()):
             self.columnconfigure(index,weight=1,uniform='tabs')
             button=tk.Button(self,text=notebook.tab(tab,'text'),width=1,
-                font=('Segoe UI',9 if IS_LINUX else 10,'bold'),padx=4,pady=4 if IS_LINUX else 6,relief='flat',borderwidth=0,
+                font=FONT_TAB_BUTTON,padx=PAD_TAB_BUTTON_PADX,pady=PAD_TAB_BUTTON_PADY,relief='flat',borderwidth=0,
                 highlightthickness=1,highlightbackground=bg,highlightcolor='#84e4c7',cursor='hand2',
                 command=lambda i=index:notebook.select(i))
             button.grid(row=0,column=index,sticky='ew',padx=(0,4 if index<len(notebook.tabs())-1 else 0))

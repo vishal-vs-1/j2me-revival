@@ -1,5 +1,6 @@
 """Persistent desktop game library and local artwork preparation."""
 import json
+import logging
 import os
 import queue
 import subprocess
@@ -12,13 +13,27 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from platform_support import IS_LINUX
+from platform_support import calculate_window_geometry
 from engine import Library, ROOT
 from app_paths import DATA_ROOT
 from gpu_policy import settings as gpu_settings, save_settings as save_gpu_settings, devices as gpu_devices
-from ui_widgets import ScrollableFrame, TabNavigation, LibraryRowActions
+from ui_widgets import ScrollableFrame, TabNavigation, LibraryRowActions, bind_dynamic_wraplength
+from ui_tokens import (
+    FONT_DISPLAY, FONT_TITLE_LG, FONT_TITLE_MD, FONT_COVER_PREVIEW, FONT_BUTTON_ACCENT,
+    FONT_TREEVIEW, FONT_SECTION_HEADER, FONT_BODY, FONT_BODY_MUTED, FONT_BADGE,
+    FONT_TABLE_HEADING, FONT_CAPTION, FONT_CAPTION_BOLD,
+    PAD_RAIL_X, PAD_RAIL_Y, PAD_RAIL_SUBTITLE_Y, PAD_RAIL_SECTION_PADX, PAD_RAIL_SECTION_PADY,
+    PAD_RAIL_DEMO_Y, PAD_MAIN_X, PAD_MAIN_Y, PAD_HEADER_Y, PAD_HEADER_SUBTITLE_Y,
+    PAD_DETAIL_X, PAD_DETAIL_Y, PAD_DETAIL_SUBTITLE_Y, PAD_COVER_X, PAD_COVER_Y,
+    PAD_PREVIEW_RIGHT_X, PAD_CACHE_INFO_Y, PAD_VIEW_CONTENT_PADX, PAD_VIEW_CONTENT_PADY,
+    PAD_TAB_NAV_Y, PAD_FOOTER_Y, PAD_FOOTER_BG_Y, PAD_PROGRESS_Y,
+    WIDTH_RAIL, BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT,
+    ROW_HEIGHT_TREEVIEW, WIDTH_TREEVIEW_ACTIONS, WIDTH_TREEVIEW_INITIAL_TITLE,
+    COLOR_BG, COLOR_PANEL, COLOR_CARD
+)
 
 GPU_CHOICES={'Auto · dedicated first':'auto','Dedicated GPU':'dedicated','Integrated GPU':'integrated','System default':'system'}
+logger = logging.getLogger(__name__)
 
 
 class App:
@@ -35,13 +50,17 @@ class App:
         self.preparation_paused = False
         self.players = {}
         root.title('JAR Revival — Enhanced Java Games')
-        root.geometry('1140x740')
-        root.minsize(980, 680)
-        self.bg, self.panel, self.card = '#0c121c', '#121c29', '#192636'
+        geometry_str, min_size, self.scaling_diagnostics = calculate_window_geometry(
+            root, BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
+        )
+        root.geometry(geometry_str)
+        root.minsize(*min_size)
+        logger.info("Window scaling initialized: %s", self.scaling_diagnostics)
+        self.bg, self.panel, self.card = COLOR_BG, COLOR_PANEL, COLOR_CARD
         root.configure(bg=self.bg)
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure('.', font=('Segoe UI',10), background=self.panel, foreground='#dce7f5')
+        style.configure('.', font=FONT_BODY, background=self.panel, foreground='#dce7f5')
         # Clam's default active/disabled maps otherwise override the dark palette.
         style.map('.',background=[('disabled',self.panel),('active',self.card)],
                   foreground=[('disabled','#7994ac'),('active','#eff5fc')])
@@ -54,7 +73,7 @@ class App:
                   indicatorforeground=[('disabled','#7994ac'),('selected','#102720')])
         style.configure('TButton',background='#263649',foreground='#dce7f5',padding=(13,9),borderwidth=0)
         style.map('TButton',background=[('active','#354b60')])
-        style.configure('Accent.TButton',background='#84e4c7',foreground='#102720',font=('Segoe UI',11,'bold'))
+        style.configure('Accent.TButton',background='#84e4c7',foreground='#102720',font=FONT_BUTTON_ACCENT)
         style.map('Accent.TButton',background=[('disabled','#263649'),('active','#a8f5df')],
                   foreground=[('disabled','#7994ac'),('!disabled','#102720')])
         style.configure('Delete.TButton',foreground='#ffb6b6')
@@ -65,9 +84,9 @@ class App:
             style.map(orientation+'.TScrollbar',background=[('active','#617f98')])
         style.configure('TCombobox',fieldbackground=self.card,background='#2a3d50',foreground='#e8f1fc',arrowcolor='#91b2c6',padding=6)
         style.map('TCombobox',fieldbackground=[('readonly',self.card)],foreground=[('readonly','#e8f1fc')])
-        style.configure('Treeview',background=self.panel,foreground='#dce7f5',fieldbackground=self.panel,rowheight=54,borderwidth=0,font=('Segoe UI',11))
+        style.configure('Treeview',background=self.panel,foreground='#dce7f5',fieldbackground=self.panel,rowheight=ROW_HEIGHT_TREEVIEW,borderwidth=0,font=FONT_TREEVIEW)
         style.map('Treeview',background=[('selected','#254b49')],foreground=[('selected','#c4ffed')])
-        style.configure('Treeview.Heading',background=self.panel,foreground='#7994ac',font=('Segoe UI',9,'bold'),padding=(10,12),borderwidth=0)
+        style.configure('Treeview.Heading',background=self.panel,foreground='#7994ac',font=FONT_TABLE_HEADING,padding=(10,12),borderwidth=0)
         style.configure('Horizontal.TProgressbar',background='#84e4c7',troughcolor='#243243',borderwidth=0,thickness=4)
         style.configure('TNotebook',background=self.panel,borderwidth=0)
         style.configure('TNotebook.Tab',background=self.card,foreground='#8ea5b9',padding=(16,9))
@@ -78,119 +97,139 @@ class App:
         style.map('Treeview.Heading',background=[('active','#263649')],foreground=[('active','#eff5fc')])
         root.option_add('*TCombobox*Listbox.background',self.card)
         root.option_add('*TCombobox*Listbox.foreground','#e8f1fc')
-        rail=tk.Frame(root,bg=self.bg,width=168,padx=14 if IS_LINUX else 20,pady=16 if IS_LINUX else 26)
-        rail.pack(side='left',fill='y');rail.pack_propagate(False)
-        tk.Label(rail,text='JAR\nREVIVAL',bg=self.bg,fg='#84e4c7',font=('Segoe UI',18 if IS_LINUX else 24,'bold'),justify='left').pack(anchor='w')
-        tk.Label(rail,text='KEYPAD CLASSICS\nON YOUR DESKTOP',bg=self.bg,fg='#6e879e',font=('Segoe UI',7 if IS_LINUX else 8),justify='left').pack(anchor='w',pady=(4,16) if IS_LINUX else (8,32))
-        tk.Label(rail,text='  ◉  Your library',bg='#1b3339',fg='#9cf0d5',font=('Segoe UI',9 if IS_LINUX else 10,'bold'),padx=8,pady=8 if IS_LINUX else 12).pack(fill='x')
-        ttk.Button(rail,text='Import demo',command=self.import_demo).pack(side='bottom',fill='x',pady=(8,0) if IS_LINUX else (12,0))
-        tk.Label(rail,text='LOCAL & PRIVATE\nNo accounts. No API fees.',bg=self.bg,fg='#6e879e',font=('Segoe UI',7 if IS_LINUX else 8),justify='left').pack(side='bottom',anchor='w')
-        main=tk.Frame(root,bg=self.bg,padx=16 if IS_LINUX else 20,pady=10 if IS_LINUX else 22);main.pack(fill='both',expand=True)
-        header=tk.Frame(main,bg=self.bg);header.pack(fill='x',pady=(0,8) if IS_LINUX else (0,20))
+        rail=tk.Frame(root,bg=self.bg,width=WIDTH_RAIL,padx=PAD_RAIL_X,pady=PAD_RAIL_Y)
+        rail.pack(side='left',fill='y')
+        tk.Label(rail,text='JAR\nREVIVAL',bg=self.bg,fg='#84e4c7',font=FONT_DISPLAY,justify='left').pack(anchor='w')
+        tk.Label(rail,text='KEYPAD CLASSICS\nON YOUR DESKTOP',bg=self.bg,fg='#6e879e',font=FONT_CAPTION,justify='left').pack(anchor='w',pady=PAD_RAIL_SUBTITLE_Y)
+        tk.Label(rail,text='  ◉  Your library',bg='#1b3339',fg='#9cf0d5',font=FONT_SECTION_HEADER,padx=PAD_RAIL_SECTION_PADX,pady=PAD_RAIL_SECTION_PADY).pack(fill='x')
+        ttk.Button(rail,text='Import demo',command=self.import_demo).pack(side='bottom',fill='x',pady=PAD_RAIL_DEMO_Y)
+        tk.Label(rail,text='LOCAL & PRIVATE\nNo accounts. No API fees.',bg=self.bg,fg='#6e879e',font=FONT_CAPTION,justify='left').pack(side='bottom',anchor='w')
+        main=tk.Frame(root,bg=self.bg,padx=PAD_MAIN_X,pady=PAD_MAIN_Y);main.pack(fill='both',expand=True)
+        header=tk.Frame(main,bg=self.bg);header.pack(fill='x',pady=PAD_HEADER_Y)
         self.add_button=ttk.Button(header,text='+ Add game',style='Accent.TButton',command=self.import_game)
         self.add_button.pack(side='right')
-        tk.Label(header,text='Your collection',bg=self.bg,fg='#eff5fc',font=('Segoe UI',17 if IS_LINUX else 23,'bold')).pack(anchor='w')
-        tk.Label(header,text='Prepared artwork. Original gameplay.',bg=self.bg,fg='#8ea5b9',font=('Segoe UI',9 if IS_LINUX else 10)).pack(anchor='w',pady=(2,0) if IS_LINUX else (4,0))
+        tk.Label(header,text='Your collection',bg=self.bg,fg='#eff5fc',font=FONT_TITLE_LG).pack(anchor='w')
+        tk.Label(header,text='Prepared artwork. Original gameplay.',bg=self.bg,fg='#8ea5b9',font=FONT_BODY).pack(anchor='w',pady=PAD_HEADER_SUBTITLE_Y)
         body=tk.Frame(main,bg=self.bg);body.pack(fill='both',expand=True)
         body.columnconfigure(0,weight=4,minsize=260);body.columnconfigure(1,weight=6,minsize=390);body.rowconfigure(0,weight=1)
         library_card=tk.Frame(body,bg=self.panel,padx=12,pady=12);library_card.grid(row=0,column=0,sticky='nsew',padx=(0,14))
-        tk.Label(library_card,text='SEARCH YOUR GAMES',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(0,7))
+        tk.Label(library_card,text='SEARCH YOUR GAMES',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).pack(anchor='w',pady=(0,7))
         searchrow=tk.Frame(library_card,bg=self.panel);searchrow.pack(fill='x',pady=(0,8))
         self.search=tk.StringVar()
-        search=tk.Entry(searchrow,textvariable=self.search,bg=self.card,fg='#dce7f5',insertbackground='white',relief='flat',font=('Segoe UI',10))
+        search=tk.Entry(searchrow,textvariable=self.search,bg=self.card,fg='#dce7f5',insertbackground='white',relief='flat',font=FONT_BODY)
         search.pack(side='left',fill='x',expand=True,ipady=8,padx=(0,8))
         ttk.Button(searchrow,text='↻',width=2,command=self.refresh).pack(side='right')
         library_list=tk.Frame(library_card,bg=self.panel);library_list.pack(fill='both',expand=True)
         library_list.columnconfigure(0,weight=1);library_list.rowconfigure(0,weight=1)
         self.tree=ttk.Treeview(library_list,height=4,columns=('actions',),show='tree headings',selectmode='browse')
         self.tree.heading('#0',text='GAME')
-        self.tree.column('#0',width=165,minwidth=1,stretch=False)
+        self.tree.column('#0',width=WIDTH_TREEVIEW_INITIAL_TITLE,minwidth=1,stretch=True)
         self.tree.heading('actions',text='')
-        self.tree.column('actions',width=84,minwidth=84,stretch=False)
+        self.tree.column('actions',width=WIDTH_TREEVIEW_ACTIONS,minwidth=WIDTH_TREEVIEW_ACTIONS,stretch=False)
         self.library_scrollbar=ttk.Scrollbar(library_list,orient='vertical',command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.library_scrollbar.set)
         self.tree.grid(row=0,column=0,sticky='nsew')
         self.library_scrollbar.grid(row=0,column=1,sticky='ns')
         self.row_actions=LibraryRowActions(self.tree,self.library_scrollbar,self.play_row,self.delete_row)
-        tk.Label(library_card,text='Deleting a game keeps saved progress.',bg=self.panel,fg='#7994ac',font=('Segoe UI',8)).pack(pady=(8,0))
+        tk.Label(library_card,text='Deleting a game keeps saved progress.',bg=self.panel,fg='#7994ac',font=FONT_CAPTION).pack(pady=(8,0))
         self.tree.bind('<Double-1>',self.library_double_click)
         self.tree.bind('<<TreeviewSelect>>', self.selected)
         self.search.trace_add('write',lambda *_:self.refresh())
-        detail=tk.Frame(body,bg=self.panel,padx=14 if IS_LINUX else 20,pady=10 if IS_LINUX else 16);detail.grid(row=0,column=1,sticky='nsew')
+        detail=tk.Frame(body,bg=self.panel,padx=PAD_DETAIL_X,pady=PAD_DETAIL_Y);detail.grid(row=0,column=1,sticky='nsew')
         self.detail_title=tk.StringVar(value='Select a game')
         self.detail_subtitle=tk.StringVar(value='Add your first Java ME game to get started.')
-        tk.Label(detail,textvariable=self.detail_title,bg=self.panel,fg='#eff5fc',font=('Segoe UI',15 if IS_LINUX else 20,'bold'),anchor='w',justify='left',wraplength=520).pack(fill='x')
-        tk.Label(detail,textvariable=self.detail_subtitle,bg=self.panel,fg='#8ea5b9',font=('Segoe UI',8 if IS_LINUX else 9),anchor='w',justify='left',wraplength=520).pack(fill='x',pady=(1,8) if IS_LINUX else (2,12))
-        cover=tk.Frame(detail,bg=self.card,padx=12 if IS_LINUX else 14,pady=8 if IS_LINUX else 12);cover.pack(fill='x')
+        self.detail_title_label=tk.Label(detail,textvariable=self.detail_title,bg=self.panel,fg='#eff5fc',font=FONT_TITLE_MD,anchor='w',justify='left')
+        self.detail_title_label.pack(fill='x')
+        self.detail_subtitle_label=tk.Label(detail,textvariable=self.detail_subtitle,bg=self.panel,fg='#8ea5b9',font=FONT_BODY_MUTED,anchor='w',justify='left')
+        self.detail_subtitle_label.pack(fill='x',pady=PAD_DETAIL_SUBTITLE_Y)
+        bind_dynamic_wraplength(detail,self.detail_title_label,self.detail_subtitle_label,padding=PAD_DETAIL_X*2)
+        cover=tk.Frame(detail,bg=self.card,padx=PAD_COVER_X,pady=PAD_COVER_Y);cover.pack(fill='x')
         preview=tk.Frame(cover,bg=self.card,width=96,height=96)
-        preview.pack(side='left',padx=(0,10) if IS_LINUX else (0,12));preview.pack_propagate(False)
-        self.cover=tk.Label(preview,text='JAR',bg=self.card,fg='#84e4c7',font=('Segoe UI',22 if IS_LINUX else 28,'bold'),width=0)
+        preview.pack(side='left',padx=PAD_PREVIEW_RIGHT_X);preview.pack_propagate(False)
+        self.cover=tk.Label(preview,text='JAR',bg=self.card,fg='#84e4c7',font=FONT_COVER_PREVIEW,width=0)
         self.cover.pack(fill='both',expand=True)
         info=tk.Frame(cover,bg=self.card);info.pack(fill='both',expand=True)
         self.cover_status=tk.StringVar(value='SAVED & READY')
-        tk.Label(info,textvariable=self.cover_status,bg=self.card,fg='#84e4c7',font=('Segoe UI',8 if IS_LINUX else 9,'bold'),anchor='w').pack(fill='x')
+        tk.Label(info,textvariable=self.cover_status,bg=self.card,fg='#84e4c7',font=FONT_BADGE,anchor='w').pack(fill='x')
         self.cache_info=tk.StringVar(value='No game selected')
-        tk.Label(info,textvariable=self.cache_info,bg=self.card,fg='#dce7f5',font=('Segoe UI',9 if IS_LINUX else 10),anchor='w',justify='left',wraplength=480).pack(fill='x',pady=(3,2) if IS_LINUX else (5,4))
+        self.cache_info_label=tk.Label(info,textvariable=self.cache_info,bg=self.card,fg='#dce7f5',font=FONT_BODY,anchor='w',justify='left')
+        self.cache_info_label.pack(fill='x',pady=PAD_CACHE_INFO_Y)
         self.compat=tk.StringVar(value='Compatibility: not checked')
-        tk.Label(info,textvariable=self.compat,bg=self.card,fg='#8ea5b9',font=('Segoe UI',8 if IS_LINUX else 9),anchor='w',justify='left',wraplength=480).pack(fill='x')
+        self.compat_label=tk.Label(info,textvariable=self.compat,bg=self.card,fg='#8ea5b9',font=FONT_BODY_MUTED,anchor='w',justify='left')
+        self.compat_label.pack(fill='x')
+        bind_dynamic_wraplength(info,self.cache_info_label,self.compat_label,padding=12)
         self.tabs=tabs=ttk.Notebook(detail,style='Content.TNotebook');tabs.pack(fill='both',expand=True)
         self.detail_views=[ScrollableFrame(tabs,bg=self.panel) for _ in range(4)]
         for view,title in zip(self.detail_views,('Play','Artwork','Compatibility','GPUs')):
-            view.content.configure(padx=4,pady=8 if IS_LINUX else 10)
+            view.content.configure(padx=PAD_VIEW_CONTENT_PADX,pady=PAD_VIEW_CONTENT_PADY)
             tabs.add(view,text=title)
         self.tab_navigation=TabNavigation(detail,tabs,bg=self.panel)
-        self.tab_navigation.pack(before=tabs,fill='x',pady=(8,6) if IS_LINUX else (16,8))
+        self.tab_navigation.pack(before=tabs,fill='x',pady=PAD_TAB_NAV_Y)
         play_panel,art_panel,compatibility_panel,gpu_panel=[view.content for view in self.detail_views]
         gpu_preferences=gpu_settings()
         for title,key in [('GAME PLAYBACK GPU','render_gpu'),('ARTWORK CONVERSION GPU','enhance_gpu')]:
-            tk.Label(gpu_panel,text=title,bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(3,5))
+            tk.Label(gpu_panel,text=title,bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).pack(anchor='w',pady=(3,5))
             combo=ttk.Combobox(gpu_panel,values=list(GPU_CHOICES),state='readonly',width=27)
             combo.set(next(label for label,value in GPU_CHOICES.items() if value==gpu_preferences[key]));combo.pack(anchor='w',pady=(0,8))
             combo.bind('<<ComboboxSelected>>',lambda event,k=key,c=combo:self.set_gpu(k,c.get()))
             setattr(self,key,combo)
         self.gpu_inventory=tk.StringVar(value='Detecting graphics devices…')
         self.active_gpu=tk.StringVar(value='The actual playback GPU appears here after launch.')
-        tk.Label(gpu_panel,textvariable=self.gpu_inventory,bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),justify='left',wraplength=420).pack(anchor='w',pady=(3,5))
-        tk.Label(gpu_panel,textvariable=self.active_gpu,bg=self.panel,fg='#84e4c7',font=('Segoe UI',9),justify='left',wraplength=420).pack(anchor='w')
-        tk.Label(gpu_panel,text='Global settings. Playback changes apply on the next launch.\nSystem/driver overrides are reported using the actual GPU.',bg=self.panel,fg='#7994ac',font=('Segoe UI',8),justify='left',wraplength=420).pack(anchor='w',pady=(6,0))
+        self.gpu_inventory_label=tk.Label(gpu_panel,textvariable=self.gpu_inventory,bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,justify='left')
+        self.gpu_inventory_label.pack(anchor='w',pady=(3,5))
+        self.active_gpu_label=tk.Label(gpu_panel,textvariable=self.active_gpu,bg=self.panel,fg='#84e4c7',font=FONT_BODY_MUTED,justify='left')
+        self.active_gpu_label.pack(anchor='w')
+        self.gpu_desc_label=tk.Label(gpu_panel,text='Global settings. Playback changes apply on the next launch.\nSystem/driver overrides are reported using the actual GPU.',bg=self.panel,fg='#7994ac',font=FONT_CAPTION,justify='left')
+        self.gpu_desc_label.pack(anchor='w',pady=(6,0))
+        bind_dynamic_wraplength(self.detail_views[3].canvas,self.gpu_inventory_label,self.active_gpu_label,self.gpu_desc_label,padding=24)
         settings=tk.Frame(play_panel,bg=self.panel);settings.pack(fill='x',pady=(6,8));settings.columnconfigure(0,weight=1);settings.columnconfigure(1,weight=1)
-        tk.Label(settings,text='DISPLAY DETAIL',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).grid(row=0,column=0,sticky='w')
-        tk.Label(settings,text='DESKTOP VIEW',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).grid(row=0,column=1,sticky='w',padx=(12,0))
+        tk.Label(settings,text='DISPLAY DETAIL',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).grid(row=0,column=0,sticky='w')
+        tk.Label(settings,text='DESKTOP VIEW',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).grid(row=0,column=1,sticky='w',padx=(12,0))
         self.quality=ttk.Combobox(settings,values=['Balanced · 2×','Detailed · 4×'],state='readonly',width=17)
         self.quality.set('Detailed · 4×');self.quality.grid(row=1,column=0,sticky='ew',pady=(5,0))
         self.quality.bind('<<ComboboxSelected>>',self.set_quality)
         ttk.Label(settings,text='Fit desktop height',padding=(10,8)).grid(row=1,column=1,sticky='ew',padx=(12,0),pady=(5,0))
-        tk.Label(compatibility_panel,text='INTERNAL GAME PROFILE',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(5,6))
+        tk.Label(compatibility_panel,text='INTERNAL GAME PROFILE',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).pack(anchor='w',pady=(5,6))
         self.resolution=ttk.Combobox(compatibility_panel,values=['128 × 160','176 × 208','176 × 220','240 × 320','320 × 240','360 × 640'],state='readonly',width=18)
         self.resolution.set('240 × 320');self.resolution.pack(anchor='w')
         self.resolution.bind('<<ComboboxSelected>>',self.set_resolution)
-        tk.Label(compatibility_panel,text='This preserves the original coordinates for game logic.\nThe desktop viewport scales the entire scene to available height.',bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),justify='left').pack(anchor='w',pady=(8,16))
-        tk.Label(compatibility_panel,text='RENDERER',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(0,6))
+        self.compat_note_label=tk.Label(compatibility_panel,text='This preserves the original coordinates for game logic.\nThe desktop viewport scales the entire scene to available height.',bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,justify='left')
+        self.compat_note_label.pack(anchor='w',pady=(8,16))
+        tk.Label(compatibility_panel,text='RENDERER',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).pack(anchor='w',pady=(0,6))
         self.renderer=ttk.Combobox(compatibility_panel,values=['GPU · OpenGL','CPU · compatibility'],state='readonly',width=23)
         self.renderer.set('GPU · OpenGL');self.renderer.pack(anchor='w');self.renderer.bind('<<ComboboxSelected>>',self.set_renderer)
         self.execution_compatibility=tk.BooleanVar(value=False)
         ttk.Checkbutton(compatibility_panel,text='Java compatibility mode (slower)',
             variable=self.execution_compatibility,command=self.set_execution_mode).pack(anchor='w',pady=(12,0))
-        tk.Label(compatibility_panel,text='For games that stop responding during scene changes. Applies on the next launch.',
-            bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),justify='left',wraplength=420).pack(anchor='w',pady=(4,0))
+        self.compat_mode_desc_label=tk.Label(compatibility_panel,text='For games that stop responding during scene changes. Applies on the next launch.',
+            bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,justify='left')
+        self.compat_mode_desc_label.pack(anchor='w',pady=(4,0))
         self.remove_wrappers=tk.BooleanVar(value=False)
         self.wrapper_option=ttk.Checkbutton(compatibility_panel,text='Skip promotional startup screens (optional)',
             variable=self.remove_wrappers,command=self.set_startup_cleanup)
         self.wrapper_option.pack(anchor='w',pady=(12,0))
         self.startup_info=tk.StringVar(value='Original game startup is used by default.')
-        tk.Label(compatibility_panel,textvariable=self.startup_info,bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),
-            justify='left',wraplength=420).pack(anchor='w',pady=(5,0))
+        self.startup_info_label=tk.Label(compatibility_panel,textvariable=self.startup_info,bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,
+            justify='left')
+        self.startup_info_label.pack(anchor='w',pady=(5,0))
         self.handling_info=tk.StringVar(value='Game handling analysis appears after selection.')
-        tk.Label(compatibility_panel,textvariable=self.handling_info,bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),justify='left',wraplength=420).pack(anchor='w',pady=(9,0))
-        tk.Label(play_panel,text='All artwork scales together. Width follows height; proportions stay intact.',bg=self.panel,fg='#7994ac',font=('Segoe UI',8),anchor='w',wraplength=420).pack(fill='x')
+        self.handling_info_label=tk.Label(compatibility_panel,textvariable=self.handling_info,bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,justify='left')
+        self.handling_info_label.pack(anchor='w',pady=(9,0))
+        bind_dynamic_wraplength(self.detail_views[2].canvas,self.compat_note_label,self.compat_mode_desc_label,self.startup_info_label,self.handling_info_label,padding=24)
+        self.play_desc_label=tk.Label(play_panel,text='All artwork scales together. Width follows height; proportions stay intact.',bg=self.panel,fg='#7994ac',font=FONT_CAPTION,anchor='w')
+        self.play_desc_label.pack(fill='x')
         actions=tk.Frame(play_panel,bg=self.panel);actions.pack(fill='x',pady=(14,10))
         self.play_button=ttk.Button(actions,text='▶  Play enhanced',style='Accent.TButton',command=self.play);self.play_button.pack(side='left',fill='x',expand=True,padx=(0,8))
         ttk.Button(actions,text='Compare original',command=lambda:self.play(True)).pack(side='left')
         self.metrics=tk.StringVar(value='Live performance appears while a game is running.')
-        tk.Label(play_panel,textvariable=self.metrics,bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),anchor='w',wraplength=420).pack(fill='x',pady=(0,8))
-        tk.Label(art_panel,text='Artwork is prepared in batches when you are not playing. During play, small jobs wait for performance headroom. Saved results are reused.',bg=self.panel,fg='#9db7cc',font=('Segoe UI',9),justify='left',anchor='w',wraplength=420).pack(fill='x',pady=(5,14))
+        self.metrics_label=tk.Label(play_panel,textvariable=self.metrics,bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,anchor='w')
+        self.metrics_label.pack(fill='x',pady=(0,8))
+        bind_dynamic_wraplength(self.detail_views[0].canvas,self.play_desc_label,self.metrics_label,padding=24)
+        self.art_desc_label=tk.Label(art_panel,text='Artwork is prepared in batches when you are not playing. During play, small jobs wait for performance headroom. Saved results are reused.',bg=self.panel,fg='#9db7cc',font=FONT_BODY_MUTED,justify='left',anchor='w')
+        self.art_desc_label.pack(fill='x',pady=(5,14))
+        bind_dynamic_wraplength(self.detail_views[1].canvas,self.art_desc_label,padding=24)
         options=tk.Frame(art_panel,bg=self.panel);options.pack(fill='x',pady=(6,0))
-        tk.Label(options,text='ARTWORK STYLE',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(0,5))
+        tk.Label(options,text='ARTWORK STYLE',bg=self.panel,fg='#7994ac',font=FONT_CAPTION_BOLD).pack(anchor='w',pady=(0,5))
         convert=tk.Frame(options,bg=self.panel);convert.pack(fill='x')
         from ai_backend import available
         self.backend=ttk.Combobox(convert,values=['Fast pixel','AI cartoon'],state='readonly',width=12)
@@ -200,15 +239,18 @@ class App:
         ttk.Button(links,text='Saved files & logs',command=self.open_folder).pack(side='left',padx=(0,8))
         ttk.Button(links,text='AI setup',command=self.install_ai).pack(side='left')
         self.status = tk.StringVar(value='Add a .jar file to begin, or import the included demo.')
-        footer=tk.Frame(main,bg=self.bg);footer.pack(side='bottom',before=body,fill='x',pady=(4,0) if IS_LINUX else (10,0))
-        background=tk.Frame(footer,bg=self.bg);background.pack(fill='x',pady=(0,3) if IS_LINUX else (0,6))
+        footer=tk.Frame(main,bg=self.bg);footer.pack(side='bottom',before=body,fill='x',pady=PAD_FOOTER_Y)
+        background=tk.Frame(footer,bg=self.bg);background.pack(fill='x',pady=PAD_FOOTER_BG_Y)
         self.preparation_info=tk.StringVar(value='Artwork cache is ready.')
-        tk.Label(background,textvariable=self.preparation_info,bg=self.bg,fg='#7994ac',font=('Segoe UI',8 if IS_LINUX else 9),anchor='w').pack(side='left',fill='x',expand=True)
+        tk.Label(background,textvariable=self.preparation_info,bg=self.bg,fg='#7994ac',font=FONT_BODY_MUTED,anchor='w').pack(side='left',fill='x',expand=True)
         self.pause_button=ttk.Button(background,text='Pause background',command=self.toggle_preparation)
         self.pause_button.pack(side='right')
-        tk.Label(footer,textvariable=self.status,bg=self.bg,fg='#b7c9d9',font=('Segoe UI',8 if IS_LINUX else 9),anchor='w',wraplength=880).pack(fill='x')
-        self.progress=ttk.Progressbar(footer,mode='indeterminate');self.progress.pack(fill='x',pady=(4,4) if IS_LINUX else (8,10))
-        tk.Label(footer,text='MOVE  ↑ ↓ ← →     SELECT  Enter     SOFTKEYS  Q / W     •     Live artwork waits for stable captures and performance headroom',bg=self.bg,fg='#6e879e',font=('Segoe UI',7 if IS_LINUX else 8),anchor='w').pack(fill='x')
+        self.status_label=tk.Label(footer,textvariable=self.status,bg=self.bg,fg='#b7c9d9',font=FONT_BODY_MUTED,anchor='w')
+        self.status_label.pack(fill='x')
+        self.progress=ttk.Progressbar(footer,mode='indeterminate');self.progress.pack(fill='x',pady=PAD_PROGRESS_Y)
+        self.footer_help_label=tk.Label(footer,text='MOVE  ↑ ↓ ← →     SELECT  Enter     SOFTKEYS  Q / W     •     Live artwork waits for stable captures and performance headroom',bg=self.bg,fg='#6e879e',font=FONT_CAPTION,anchor='w')
+        self.footer_help_label.pack(fill='x')
+        bind_dynamic_wraplength(footer,self.status_label,self.footer_help_label,padding=16)
         self._last_metrics=0
         self._preview_key=None
         self.refresh()
