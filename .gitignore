@@ -18,6 +18,9 @@ Thumbs.db
 library/
 rendered-games/
 original-assets/
+# Local game files and private work history.
+/gamesss/
+/local-work/
 config/
 .runtime/
 freej2me_system/

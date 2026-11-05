@@ -24,6 +24,14 @@ from runtime_assets.service import AssetService
 from game_storage import GameStorage, validate_game_id
 from execution_policy import java_execution_arguments
 from app_paths import RESOURCE_ROOT, DATA_ROOT
+from control_profiles import (
+    CUSTOM_SLOT_IDS,
+    DEFAULT_SLOT_ID,
+    ControlProfileStore,
+    ProfileValidationError,
+    resolve_selection,
+    serialize_bindings,
+)
 
 ROOT = RESOURCE_ROOT
 LIBRARY = DATA_ROOT / 'library'
@@ -103,7 +111,7 @@ def locate_java(tool='java') -> str:
 
 
 class Library:
-    def __init__(self, library=LIBRARY, rendered=RENDERED, workers=2):
+    def __init__(self, library=LIBRARY, rendered=RENDERED, workers=2, *, control_profiles=None):
         self.library, self.rendered = Path(library), Path(rendered)
         self.library.mkdir(parents=True, exist_ok=True)
         self.rendered.mkdir(parents=True, exist_ok=True)
@@ -112,6 +120,8 @@ class Library:
         self._asset_backends = {}
         self._players = {}
         self._deleting = set()
+        self.control_profiles = control_profiles or ControlProfileStore(
+            DATA_ROOT / 'config' / 'control-profiles.json', atomic_json)
         self.asset_service = AssetService(self._backend_for_recipe)
 
     def recipe_for_backend(self, backend):
@@ -172,6 +182,33 @@ class Library:
         with self.lock:
             self._check_not_deleting(game['id'])
             atomic_json(self.workspace(game['id']) / 'game.json', game)
+
+    def set_control_profile_id(self, game_id, slot_id):
+        """Persist only this game's profile selection without replacing fresh metadata."""
+        with self.lock:
+            self._check_not_deleting(game_id)
+            game_file = self.workspace(game_id) / 'game.json'
+            if not game_file.is_file():
+                raise FileNotFoundError('This game is no longer in the library.')
+            if slot_id is None or slot_id == DEFAULT_SLOT_ID:
+                slot_id = DEFAULT_SLOT_ID
+            elif slot_id not in CUSTOM_SLOT_IDS:
+                raise ProfileValidationError('Choose a saved control profile or Default.')
+            else:
+                profiles = self.control_profiles.load()
+                if profiles.problem:
+                    raise ProfileValidationError(
+                        f'Cannot select a profile because the profile file could not be read: {profiles.problem}')
+                if profiles.get(slot_id) is None:
+                    raise ProfileValidationError('This control profile is no longer saved.')
+            current = json.loads(game_file.read_text(encoding='utf-8'))
+            if not isinstance(current, dict) or current.get('id') != game_id:
+                raise RuntimeError('Game metadata is invalid or no longer matches this library entry.')
+            if slot_id == DEFAULT_SLOT_ID:
+                current.pop('control_profile_id', None)
+            else:
+                current['control_profile_id'] = slot_id
+            atomic_json(game_file, current)
 
     def _check_not_deleting(self,game_id):
         if game_id in self._deleting:raise RuntimeError('This game is being deleted. Wait for deletion to finish before importing or changing it.')
@@ -456,12 +493,18 @@ class Library:
         gpu_mode=settings()['render_gpu']
         java=player_java(gpu_mode) if game.get('renderer','gpu')=='gpu' else locate_java()
         expected=expected_device(gpu_mode) if game.get('renderer','gpu')=='gpu' else None
+        selection=game.get('control_profile_id')
+        control_resolution=resolve_selection(selection,self.control_profiles.load())
+        control_profile_arg=(f'-Djme.controlBindings={serialize_bindings(control_resolution.profile)}'
+                             if control_resolution.profile is not None else None)
         args = [java, *java_execution_arguments(game), '-Xmx768m', '-Dfile.encoding=ISO_8859_1', f'-Djme.pack={folder}',
                 f'-Djme.stats={log_path.with_suffix(".stats.json")}',
                 f"-Djme.textures={self.texture_dir(folder,game.get('backend','pixel'))}",
                 f'-Djme.scale={1 if original else render_scale}']
         args += [f'-Djme.gpuPreference={gpu_mode}',f'-Djme.expectedGpu={expected["name"] if expected else ""}']
         args += runtime_arguments(game['id'],game)
+        if control_profile_arg is not None:
+            args.append(control_profile_arg)
         if game.get('renderer','gpu')=='gpu':
             if not list((ROOT/'tools/gpu').glob('lwjgl-*.jar')):
                 raise RuntimeError('GPU runtime is missing. Run python tools/setup_gpu.py first.')
@@ -476,6 +519,11 @@ class Library:
         with log_path.open('w', encoding='utf-8') as log:
             log.write('Startup: '+str(playable)+'\n')
             log.write(game['startup']['note']+'\n')
+            if control_resolution.profile is not None:
+                log.write('Control profile: '+control_resolution.profile.slot_id+'\n')
+            elif control_resolution.reason:
+                requested=selection if selection in CUSTOM_SLOT_IDS else 'invalid'
+                log.write('Control profile fallback: '+requested+' -> default ('+control_resolution.reason+')\n')
             log.flush()
             process = subprocess.Popen(args, cwd=folder / 'saves', stdout=log, stderr=subprocess.STDOUT)
         self._players[game['id']]=process

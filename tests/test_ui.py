@@ -8,6 +8,8 @@ from unittest.mock import Mock
 import pytest
 
 from app import App
+from control_profiles import ControlProfileStore
+from engine import atomic_json
 from ui_widgets import ScrollableFrame
 
 
@@ -42,6 +44,7 @@ def root(display):
 class PreviewLibrary:
     def __init__(self,base,count):
         self.rendered=base/'rendered';self.rendered.mkdir(parents=True)
+        self.control_profiles=ControlProfileStore(base/'config'/'control-profiles.json',atomic_json)
         self.lock=threading.RLock()
         self.asset_service=Mock()
         self.rows=[{'id':f'{index+1:064x}','name':f'Test game {index+1:02d}',

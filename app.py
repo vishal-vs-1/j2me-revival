@@ -16,6 +16,8 @@ from engine import Library, ROOT
 from app_paths import DATA_ROOT
 from gpu_policy import settings as gpu_settings, save_settings as save_gpu_settings, devices as gpu_devices
 from ui_widgets import ScrollableFrame, TabNavigation, LibraryRowActions
+from control_profiles import DEFAULT_SLOT_ID
+from control_profile_dialog import ControlProfileDialog
 
 GPU_CHOICES={'Auto · dedicated first':'auto','Dedicated GPU':'dedicated','Integrated GPU':'integrated','Windows default':'system'}
 
@@ -33,6 +35,9 @@ class App:
         self.pending_imports = deque()
         self.preparation_paused = False
         self.players = {}
+        self.settings_dialog = None
+        self.control_profile_choice_ids = {}
+        self.control_profile_problem = None
         root.title('JAR Revival — Enhanced Java Games')
         root.geometry('1140x740')
         root.minsize(980, 680)
@@ -82,6 +87,8 @@ class App:
         tk.Label(rail,text='JAR\nREVIVAL',bg=self.bg,fg='#84e4c7',font=('Segoe UI',24,'bold'),justify='left').pack(anchor='w')
         tk.Label(rail,text='KEYPAD CLASSICS\nON YOUR DESKTOP',bg=self.bg,fg='#6e879e',font=('Segoe UI',8),justify='left').pack(anchor='w',pady=(8,32))
         tk.Label(rail,text='  ◉  Your library',bg='#1b3339',fg='#9cf0d5',font=('Segoe UI',10,'bold'),padx=10,pady=12).pack(fill='x')
+        self.settings_button=ttk.Button(rail,text='Settings',command=self.open_settings)
+        self.settings_button.pack(fill='x',pady=(10,0))
         ttk.Button(rail,text='Import demo',command=self.import_demo).pack(side='bottom',fill='x',pady=(12,0))
         tk.Label(rail,text='LOCAL & PRIVATE\nNo accounts. No API fees.',bg=self.bg,fg='#6e879e',font=('Segoe UI',8),justify='left').pack(side='bottom',anchor='w')
         main=tk.Frame(root,bg=self.bg,padx=20,pady=22);main.pack(fill='both',expand=True)
@@ -159,6 +166,16 @@ class App:
         self.quality.set('Detailed · 4×');self.quality.grid(row=1,column=0,sticky='ew',pady=(5,0))
         self.quality.bind('<<ComboboxSelected>>',self.set_quality)
         ttk.Label(settings,text='Fit desktop height',padding=(10,8)).grid(row=1,column=1,sticky='ew',padx=(12,0),pady=(5,0))
+        control_row=tk.Frame(play_panel,bg=self.panel);control_row.pack(fill='x',pady=(3,4))
+        tk.Label(control_row,text='CONTROL PROFILE',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(0,5))
+        control_actions=tk.Frame(control_row,bg=self.panel);control_actions.pack(fill='x')
+        self.control_profile=tk.StringVar(value='Default')
+        self.control_profile_combo=ttk.Combobox(control_actions,textvariable=self.control_profile,state='disabled',width=22)
+        self.control_profile_combo.pack(side='left',fill='x',expand=True)
+        self.control_profile_combo.bind('<<ComboboxSelected>>',self.set_control_profile)
+        self.control_profile_info=tk.StringVar(value='Default controls are selected.')
+        tk.Label(control_row,textvariable=self.control_profile_info,bg=self.panel,fg='#9db7cc',
+                 font=('Segoe UI',8),anchor='w',wraplength=420).pack(fill='x',pady=(4,0))
         tk.Label(compatibility_panel,text='INTERNAL GAME PROFILE',bg=self.panel,fg='#7994ac',font=('Segoe UI',8,'bold')).pack(anchor='w',pady=(5,6))
         self.resolution=ttk.Combobox(compatibility_panel,values=['128 × 160','176 × 208','176 × 220','240 × 320','320 × 240','360 × 640'],state='readonly',width=18)
         self.resolution.set('240 × 320');self.resolution.pack(anchor='w')
@@ -207,7 +224,7 @@ class App:
         self.pause_button.pack(side='right')
         tk.Label(footer,textvariable=self.status,bg=self.bg,fg='#b7c9d9',font=('Segoe UI',9),anchor='w',wraplength=880).pack(fill='x')
         self.progress=ttk.Progressbar(footer,mode='indeterminate');self.progress.pack(fill='x',pady=(8,10))
-        tk.Label(footer,text='MOVE  ↑ ↓ ← →     SELECT  Enter     SOFTKEYS  Q / W     •     Live artwork waits for stable captures and performance headroom',bg=self.bg,fg='#6e879e',font=('Segoe UI',8),anchor='w').pack(fill='x')
+        tk.Label(footer,text='CONTROLS  Choose a profile in Play · Edit shared keys in Settings     •     Live artwork waits for stable captures and performance headroom',bg=self.bg,fg='#6e879e',font=('Segoe UI',8),anchor='w').pack(fill='x')
         self._last_metrics=0
         self._preview_key=None
         self.refresh()
@@ -289,6 +306,7 @@ class App:
             self.metrics.set('Select a game to play.')
             self.handling_info.set('Game handling analysis appears after selection.')
             self.play_button.configure(state='disabled')
+        self._refresh_control_profile_controls(self.game_if_selected())
         self._update_row_actions()
 
     def _update_row_actions(self):
@@ -324,6 +342,7 @@ class App:
         selected = self.tree.selection()
         if selected and selected[0] in self.games:
             game = self.games[selected[0]]
+            self._refresh_control_profile_controls(game)
             self.resolution.set(f"{game['width']} × {game['height']}")
             self.quality.set('Detailed · 4×' if game.get('render_scale',4)==4 else 'Balanced · 2×')
             self.renderer.set('CPU · compatibility' if game.get('renderer')=='cpu' else 'GPU · OpenGL')
@@ -400,6 +419,7 @@ class App:
             return
         game=self.game()
         if game is None:return
+        if game['id'] in self.deleting_games:return
         old=self.players.get(game['id'])
         if old and old[0].poll() is None:
             messagebox.showinfo('Game is running','Close this game before deleting it so its saves can finish writing.')
@@ -419,6 +439,69 @@ class App:
             except Exception as error:
                 self.messages.put(('delete_error',(game,str(error))))
         self._delete_workers.submit(worker)
+
+    def _refresh_control_profile_controls(self, game=None):
+        result=self.library.control_profiles.load()
+        self.control_profile_problem=result.problem
+        labels={'Default':DEFAULT_SLOT_ID}
+        for profile in result.slots:
+            labels[f'{profile.slot_id[-1]} · {profile.name}']=profile.slot_id
+        self.control_profile_choice_ids=labels
+        self.control_profile_combo.configure(values=tuple(labels))
+        selected_id=game.get('control_profile_id',DEFAULT_SLOT_ID) if game else DEFAULT_SLOT_ID
+        label=next((label for label,slot_id in labels.items() if slot_id==selected_id),'Default')
+        self.control_profile.set(label)
+        enabled=bool(game) and not self.busy and game['id'] not in self.deleting_games
+        self.control_profile_combo.configure(state='readonly' if enabled else 'disabled')
+        if result.problem:
+            self.control_profile_info.set(f'Profiles could not be read. Default remains available. {result.problem}')
+        elif game and selected_id != DEFAULT_SLOT_ID and label=='Default':
+            self.control_profile_info.set('This game’s saved profile is missing. Default controls are selected.')
+        elif not result.slots:
+            self.control_profile_info.set('Create shared profiles in Settings.')
+        else:
+            self.control_profile_info.set('Profiles are managed in Settings. Choice applies next launch.')
+
+    def open_settings(self):
+        """Open or raise the one global keyboard-settings window."""
+        current=self.settings_dialog
+        if current is not None and current.top.winfo_exists():
+            current.top.deiconify()
+            current.top.lift()
+            return
+        self.settings_dialog=ControlProfileDialog(
+            self.root,self.library.control_profiles,self._control_profiles_changed)
+
+    def _control_profiles_changed(self, _slot_id):
+        # A shared-slot save changes available labels, never a game's chosen ID.
+        self._refresh_control_profile_controls(self.game_if_selected())
+
+    def game_if_selected(self):
+        selection=self.tree.selection()
+        if selection and selection[0] in self.games:
+            return self.games[selection[0]]
+        return None
+
+    def set_control_profile(self,event=None):
+        game=self.game_if_selected()
+        label=self.control_profile.get()
+        slot_id=self.control_profile_choice_ids.get(label)
+        if (game is None or slot_id is None or self.busy
+                or game['id'] in self.deleting_games):
+            self._refresh_control_profile_controls(game)
+            return
+        try:
+            self.library.set_control_profile_id(game['id'],slot_id)
+        except (OSError,RuntimeError,ValueError) as error:
+            self._refresh_control_profile_controls(game)
+            self.status.set(f'Could not save control profile: {error}')
+            return
+        if slot_id==DEFAULT_SLOT_ID:
+            game.pop('control_profile_id',None)
+        else:
+            game['control_profile_id']=slot_id
+        self._refresh_control_profile_controls(game)
+        self.status.set('Control profile preference saved for this game.')
 
     def set_quality(self,event=None):
         game=self.game()

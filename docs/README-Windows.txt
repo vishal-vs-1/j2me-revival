@@ -12,6 +12,19 @@ START HERE
 The included Revival Demo is synthetic. No commercial game JAR is included.
 Fast pixel is ready immediately and works offline.
 
+KEYBOARD PROFILES
+1. Open Settings in the left sidebar to create or edit up to three shared
+   profiles. Use Capture to press a key, or choose a supported key from the
+   list.
+2. Select a game, open its Play tab, and choose Default or a saved profile
+   from the Control profile list.
+3. Each game remembers its own profile choice. Editing a shared slot applies
+   to every game using it the next time those games start.
+
+Movement, fire and softkeys must stay assigned; keypad actions can be
+unbound. Default keeps the player's existing keyboard controls. GPU Esc
+and F11, and CPU +/-, Ctrl+Alt+F and Ctrl+Alt+R, remain emulator shortcuts.
+
 OPTIONAL AI CARTOON
 The AI runtime and model are not included in this ZIP.
 1. Connect to the internet and open the Artwork tab.

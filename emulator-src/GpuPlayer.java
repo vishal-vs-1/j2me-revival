@@ -6,6 +6,7 @@ import java.nio.IntBuffer;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.IntUnaryOperator;
 import javax.imageio.ImageIO;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.*;
@@ -16,7 +17,9 @@ import static org.lwjgl.opengl.GL11.*;
 public final class GpuPlayer {
     private static String json(String value){return value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r");}
     private static String gpuName(String value){return value.toLowerCase(Locale.ROOT).replace("(tm)","").replace("(r)","").replaceAll("[^a-z0-9]","");}
-    private static final KeyInputController INPUT=new KeyInputController(DesktopKeyMap::toPhone,new MobileInputSink());
+    private static final ControlProfileBindings CONTROL_BINDINGS=ControlProfileBindings.fromSystemProperty();
+    private static final IntUnaryOperator KEY_MAPPING=GlfwControlKeys.mapping(CONTROL_BINDINGS);
+    private static final KeyInputController INPUT=new KeyInputController(KEY_MAPPING,new MobileInputSink());
     private static volatile Throwable gameFailure;
     public static void releaseHeldKeys() {
         INPUT.releaseAll();
@@ -24,6 +27,7 @@ public final class GpuPlayer {
     public static void dispatchKey(int key,int action) {
         INPUT.handle(key,action);
     }
+    private static int mappedPhoneKey(int key) { return KEY_MAPPING.applyAsInt(key); }
     public static void main(String[] args) {
         long window=0;
         try {
@@ -48,10 +52,11 @@ public final class GpuPlayer {
             final long nativeWindow=window;
             final int logicalWidth=Integer.parseInt(args[1]),logicalHeight=Integer.parseInt(args[2]);
             final String name=args.length>3?args[3]:"Java ME game";
-            glfwSetWindowTitle(window,name+" · "+GpuRenderer.device+" · Arrows / Enter / Q W · F11 fullscreen · Esc close");
+            String controls=CONTROL_BINDINGS.isCustom()?"Custom controls":"Arrows / Enter / Q W";
+            glfwSetWindowTitle(window,name+" · "+GpuRenderer.device+" · "+controls+" · F11 fullscreen · Esc close");
             if(!hidden)glfwFocusWindow(window);
             glfwSetKeyCallback(window,(handle,key,scan,action,mods)->{
-                if(Boolean.getBoolean("jme.inputTrace"))System.out.println("NATIVE KEY key="+key+" scan="+scan+" action="+action+" mapped="+DesktopKeyMap.toPhone(key));
+                if(Boolean.getBoolean("jme.inputTrace"))System.out.println("NATIVE KEY key="+key+" scan="+scan+" action="+action+" mapped="+mappedPhoneKey(key));
                 if(key==GLFW_KEY_ESCAPE&&action==GLFW_PRESS){glfwSetWindowShouldClose(handle,true);return;}
                 if(key==GLFW_KEY_F11&&action==GLFW_PRESS) {
                     long monitor=glfwGetPrimaryMonitor();GLFWVidMode mode=glfwGetVideoMode(monitor);
@@ -59,10 +64,13 @@ public final class GpuPlayer {
                     else {glfwSetWindowMonitor(handle,0,60,40,1000,800,GLFW_DONT_CARE);glfwMaximizeWindow(handle);}
                     return;
                 }
+                int modified=GLFW_MOD_CONTROL|GLFW_MOD_ALT|GLFW_MOD_SUPER;
+                if(CONTROL_BINDINGS.isCustom()&&action!=GLFW_RELEASE&&(mods&modified)!=0)return;
                 dispatchKey(key,action);
                 if(Boolean.getBoolean("jme.inputTrace")&&Mobile.getDisplay()!=null)Mobile.getDisplay().callSerially(()->{
                     javax.microedition.lcdui.Displayable current=Mobile.getDisplay().getCurrent();
-                    System.out.println("KEY DELIVERY mapped="+DesktopKeyMap.toPhone(key)+" canvasAction="+Mobile.getCanvasAction(DesktopKeyMap.toPhone(key))+" display="+(current==null?"null":current.getClass().getName())+" index="+(current instanceof javax.microedition.lcdui.List?((javax.microedition.lcdui.List)current).getSelectedIndex():-1));
+                    int mapped=mappedPhoneKey(key);
+                    System.out.println("KEY DELIVERY mapped="+mapped+" canvasAction="+Mobile.getCanvasAction(mapped)+" display="+(current==null?"null":current.getClass().getName())+" index="+(current instanceof javax.microedition.lcdui.List?((javax.microedition.lcdui.List)current).getSelectedIndex():-1));
                 });
             });
             glfwSetWindowFocusCallback(window,(handle,focused)->{if(!focused)releaseHeldKeys();});

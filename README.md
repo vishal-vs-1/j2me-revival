@@ -66,6 +66,12 @@ This is the same 168 × 121 logo image from a local Bounce Tales import, shown a
 - Compare enhanced presentation with the original and keep the source JAR unchanged.
 - Run enhancement locally; game files and artwork are not uploaded.
 
+## Custom keyboard profiles
+
+Open **Settings** in the left sidebar to create or edit up to three shared keyboard profiles. In a game's **Play** tab, choose **Default** or a saved profile from **Control profile**. Several games can share a profile, while each game remembers its own choice; edits apply the next time those games launch.
+
+Use the key picker or **Capture** buttons to set movement, fire, softkeys and keypad actions. Movement, fire and softkeys must stay assigned; number keys, star and hash may be unbound. Changes take effect the next time the game starts. **Default** keeps the renderer's existing keyboard controls. GPU **Esc** and **F11**, and CPU **+/-** and **Ctrl+Alt+F/R** emulator shortcuts remain reserved.
+
 ## Try it on Windows
 
 For the portable Windows ZIP, extract the entire folder and open **JAR Revival.exe**. **README.txt** sits beside the app and gives the demo, AI setup, and upgrade steps. Support files are in `app/`; saves, settings, artwork, and downloaded AI are in `data/`.
