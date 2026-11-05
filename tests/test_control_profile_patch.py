@@ -1,4 +1,4 @@
-import subprocess
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -7,16 +7,14 @@ from tools.patch_emulator import patch_control_profile_frontend
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VENDOR = ROOT / "vendor" / "freej2me-plus"
-FRONTEND = "src/org/recompile/freej2me/FreeJ2ME.java"
+FRONTEND_FIXTURE = ROOT / "tests" / "fixtures" / "freej2me-plus" / "FreeJ2ME.java.txt"
+FRONTEND_SHA256 = "3807282d28dcf45fefe94685a42ce7bce852856528b056c4dd3ef2d1cefa1d2f"
 
 
 def test_pinned_cpu_frontend_patch_is_focused_and_idempotent():
-    original = subprocess.check_output(
-        ["git", "-C", str(VENDOR), "show", "HEAD:" + FRONTEND],
-        text=True,
-        encoding="utf-8",
-    )
+    # Keep the pinned-source check independent of an optional local emulator checkout.
+    original = FRONTEND_FIXTURE.read_text(encoding="utf-8")
+    assert hashlib.sha256(original.encode("utf-8")).hexdigest() == FRONTEND_SHA256
 
     patched = patch_control_profile_frontend(original)
 
