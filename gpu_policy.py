@@ -1,9 +1,10 @@
 """App-scoped GPU preference, Vulkan inventory and explicit inference device selection."""
 from __future__ import annotations
 import ctypes as C
-import json,os,threading,time,uuid
+import json,os,sys,threading,time,uuid
 from pathlib import Path
 from app_paths import RESOURCE_ROOT, DATA_ROOT
+from platform_support import IS_WINDOWS, IS_LINUX
 
 ROOT=RESOURCE_ROOT
 SETTINGS=DATA_ROOT/'library/settings.json'
@@ -29,12 +30,36 @@ def save_settings(**changes):
         temp.write_text(json.dumps(value,indent=2),encoding='utf-8');os.replace(temp,SETTINGS)
         return value
 
+def _load_vulkan():
+    """Load the Vulkan shared library for the current platform.
+
+    Raises OSError if the driver is not installed; callers must treat this as
+    'no GPU available' rather than a fatal error.
+    """
+    if IS_WINDOWS:
+        return C.WinDLL('vulkan-1.dll')
+    if IS_LINUX:
+        return C.CDLL('libvulkan.so.1')
+    raise OSError(f'Vulkan enumeration is not supported on {sys.platform}')
+
+
 def devices(refresh=False):
-    """Vulkan physical-device order matches the IDs used by the NCNN Vulkan runtime."""
+    """Enumerate Vulkan physical devices.
+
+    Returns [] if Vulkan is unavailable (driver not installed, unsupported OS).
+    The returned device indices are what the NCNN runtime sees when it loads the
+    same Vulkan library in-process; cross-process index stability is not
+    guaranteed by the Vulkan spec and must be verified separately.
+    """
     global _inventory
     with _lock:
         if _inventory is not None and not refresh:return list(_inventory)
-        if os.name!='nt':return []
+        try:
+            vk=_load_vulkan()
+        except OSError:
+            # Vulkan driver absent or unsupported platform — non-fatal.
+            _inventory=[];return []
+        instance=C.c_void_p()
         class App(C.Structure):
             _fields_=[('sType',C.c_uint32),('pNext',C.c_void_p),('name',C.c_char_p),('version',C.c_uint32),('engine',C.c_char_p),('engineVersion',C.c_uint32),('api',C.c_uint32)]
         class Info(C.Structure):
@@ -46,33 +71,51 @@ def devices(refresh=False):
         class MemoryProperties(C.Structure):
             _fields_=[('type_count',C.c_uint32),('types',MemoryType*32),
                       ('heap_count',C.c_uint32),('heaps',MemoryHeap*16)]
-        vk=C.WinDLL('vulkan-1.dll');instance=C.c_void_p()
-        vk.vkCreateInstance.argtypes=[C.POINTER(Info),C.c_void_p,C.POINTER(C.c_void_p)];vk.vkCreateInstance.restype=C.c_int
-        vk.vkEnumeratePhysicalDevices.argtypes=[C.c_void_p,C.POINTER(C.c_uint32),C.POINTER(C.c_void_p)];vk.vkEnumeratePhysicalDevices.restype=C.c_int
-        vk.vkGetPhysicalDeviceProperties.argtypes=[C.c_void_p,C.c_void_p]
-        vk.vkGetPhysicalDeviceMemoryProperties.argtypes=[C.c_void_p,C.POINTER(MemoryProperties)]
-        vk.vkDestroyInstance.argtypes=[C.c_void_p,C.c_void_p]
-        app=App(0,None,b'JAR Revival',1,b'JAR Revival',1,1<<22)
-        info=Info(1,None,0,C.pointer(app),0,None,0,None)
-        code=vk.vkCreateInstance(C.byref(info),None,C.byref(instance))
-        if code:raise RuntimeError(f'Vulkan device discovery failed ({code})')
         try:
-            count=C.c_uint32();code=vk.vkEnumeratePhysicalDevices(instance,C.byref(count),None)
-            if code:raise RuntimeError(f'Vulkan device enumeration failed ({code})')
-            handles=(C.c_void_p*count.value)();code=vk.vkEnumeratePhysicalDevices(instance,C.byref(count),handles)
-            if code not in (0,5):raise RuntimeError(f'Vulkan device enumeration failed ({code})')
+            vk.vkCreateInstance.argtypes=[C.POINTER(Info),C.c_void_p,C.POINTER(C.c_void_p)];vk.vkCreateInstance.restype=C.c_int
+            vk.vkEnumeratePhysicalDevices.argtypes=[C.c_void_p,C.POINTER(C.c_uint32),C.POINTER(C.c_void_p)];vk.vkEnumeratePhysicalDevices.restype=C.c_int
+            vk.vkGetPhysicalDeviceProperties.argtypes=[C.c_void_p,C.c_void_p]
+            vk.vkGetPhysicalDeviceMemoryProperties.argtypes=[C.c_void_p,C.POINTER(MemoryProperties)]
+            vk.vkDestroyInstance.argtypes=[C.c_void_p,C.c_void_p]
+            app=App(0,None,b'JAR Revival',1,b'JAR Revival',1,1<<22)
+            info=Info(1,None,0,C.pointer(app),0,None,0,None)
+            code=vk.vkCreateInstance(C.byref(info),None,C.byref(instance))
+            if code!=0 or not instance.value:
+                _inventory=[];return []
+        except Exception:
+            _inventory=[];return []
+
+        try:
+            count=C.c_uint32(0)
+            code=vk.vkEnumeratePhysicalDevices(instance,C.byref(count),None)
+            if code!=0 or count.value==0:
+                _inventory=[];return []
+            handles=(C.c_void_p*count.value)()
+            code=vk.vkEnumeratePhysicalDevices(instance,C.byref(count),handles)
+            if code not in (0,5):
+                _inventory=[];return []
             result=[]
             for index,handle in enumerate(handles[:count.value]):
-                raw=C.create_string_buffer(4096);vk.vkGetPhysicalDeviceProperties(handle,raw)
-                fields=(C.c_uint32*5).from_buffer(raw);kind=fields[4]
-                if kind not in (1,2,3):continue
-                memory=MemoryProperties();vk.vkGetPhysicalDeviceMemoryProperties(handle,C.byref(memory))
-                local=sum(memory.heaps[i].size for i in range(min(memory.heap_count,16)) if memory.heaps[i].flags&1)
-                result.append({'index':index,'name':raw.raw[20:276].split(b'\0',1)[0].decode('utf-8',errors='replace'),
-                               'kind':{1:'integrated',2:'dedicated',3:'virtual'}[kind],'vendor':int(fields[2]),
-                               'device_local_bytes':int(local),'driver_version':int(fields[1])})
+                if not handle:continue
+                try:
+                    raw=C.create_string_buffer(4096);vk.vkGetPhysicalDeviceProperties(handle,raw)
+                    fields=(C.c_uint32*5).from_buffer(raw);kind=fields[4]
+                    if kind not in (1,2,3):continue
+                    memory=MemoryProperties();vk.vkGetPhysicalDeviceMemoryProperties(handle,C.byref(memory))
+                    local=sum(memory.heaps[i].size for i in range(min(memory.heap_count,16)) if memory.heaps[i].flags&1)
+                    name=raw.raw[20:276].split(b'\0',1)[0].decode('utf-8',errors='replace')
+                    result.append({'index':index,'name':name,
+                                   'kind':{1:'integrated',2:'dedicated',3:'virtual'}[kind],'vendor':int(fields[2]),
+                                   'device_local_bytes':int(local),'driver_version':int(fields[1])})
+                except Exception:
+                    continue
             _inventory=result;return list(result)
-        finally:vk.vkDestroyInstance(instance,None)
+        except Exception:
+            _inventory=[];return []
+        finally:
+            if instance and instance.value:
+                try:vk.vkDestroyInstance(instance,None)
+                except Exception:pass
 
 def choose_device(mode,available=None):
     available=devices() if available is None else available
@@ -92,9 +135,12 @@ def inference_arguments():
     return (['-g',str(device['index'])] if device else []),device
 
 def player_java(mode):
-    """Change only this project's private executable's Windows graphics profile."""
+    """Return the path to the private runtime java binary and, on Windows, set
+    the per-app GPU preference in the registry for this executable only.
+    """
+    from platform_support import java_binary_name
     if mode not in MODES:raise ValueError('Unknown GPU preference')
-    executable=ROOT/'tools/runtime/bin/java.exe'
+    executable=ROOT/'tools/runtime/bin'/java_binary_name()
     if not executable.exists():raise RuntimeError('The private player runtime is missing. Run python tools/setup_runtime.py.')
     if os.name=='nt':
         import winreg

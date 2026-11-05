@@ -87,12 +87,15 @@ def read_manifest(raw: bytes) -> dict:
 
 
 def locate_java(tool='java') -> str:
+    from platform_support import java_binary_name, IS_WINDOWS
+    binary = java_binary_name(tool)
     override = os.environ.get('JME_JAVA_HOME')
-    candidates = [Path(override) / 'bin' / (tool + '.exe')] if override else []
-    # Avoid Oracle javapath launcher shims, which can hang on stale installations.
-    for base in [Path('C:/Program Files/Java'), Path('C:/Program Files/Eclipse Adoptium')]:
-        if base.exists():
-            candidates.extend(p / 'bin' / (tool + '.exe') for p in sorted(base.iterdir(), reverse=True))
+    candidates = [Path(override) / 'bin' / binary] if override else []
+    if IS_WINDOWS:
+        # Avoid Oracle javapath launcher shims, which can hang on stale installations.
+        for base in [Path('C:/Program Files/Java'), Path('C:/Program Files/Eclipse Adoptium')]:
+            if base.exists():
+                candidates.extend(p / 'bin' / binary for p in sorted(base.iterdir(), reverse=True))
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)

@@ -14,7 +14,8 @@ PADDING=8
 
 
 def executable():
-    return next((ROOT/'tools/ai').rglob('realesrgan-ncnn-vulkan.exe'),None)
+    from platform_support import ncnn_binary_name
+    return next((ROOT/'tools/ai').rglob(ncnn_binary_name()), None)
 
 
 def available():
@@ -88,9 +89,11 @@ def _restore(output, image, alpha):
         if decoded.size!=expected: raise ValueError('AI returned unexpected image dimensions')
         border=PADDING*SCALE
         enhanced=decoded.convert('RGBA').crop((border,border,border+image.width*SCALE,border+image.height*SCALE))
-    if alpha.size != image.size:
+    if alpha.size not in (image.size, enhanced.size):
         raise ValueError('Source transparency mask does not match the image dimensions')
-    enhanced.putalpha(alpha.resize(enhanced.size, Image.Resampling.NEAREST))
+    if alpha.size != enhanced.size:
+        alpha = alpha.resize(enhanced.size, Image.Resampling.NEAREST)
+    enhanced.putalpha(alpha)
     return enhanced
 
 

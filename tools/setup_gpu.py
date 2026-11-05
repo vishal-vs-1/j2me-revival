@@ -1,14 +1,16 @@
-"""Fetch pinned official LWJGL jars and Windows x64 natives from Maven Central."""
+"""Fetch pinned official LWJGL jars and platform-native binaries from Maven Central."""
 from pathlib import Path
-import hashlib,json,urllib.request
-ROOT=Path(__file__).resolve().parents[1]
+import hashlib,json,sys,urllib.request
+ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+from platform_support import lwjgl_classifier
 VERSION='3.3.6'
 
 def install():
     folder=ROOT/'tools/gpu';folder.mkdir(parents=True,exist_ok=True)
+    classifier=lwjgl_classifier()
     records=[]
     for module in ['lwjgl','lwjgl-glfw','lwjgl-opengl']:
-        for suffix in ['', '-natives-windows']:
+        for suffix in ['', classifier]:
             name=f'{module}-{VERSION}{suffix}.jar'
             url=f'https://repo.maven.apache.org/maven2/org/lwjgl/{module}/{VERSION}/{name}'
             target=folder/name

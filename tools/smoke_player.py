@@ -14,6 +14,7 @@ library=Library()
 game=next(g for g in library.games() if g['name']=='Revival Demo')
 folder=library.workspace(game['id'])
 proof=ROOT/'build/player-proof.png'
+if proof.exists(): proof.unlink()
 log_path=ROOT/'build/player-smoke.log'
 started=time.time()
 process,log_path=library.launch(game,proof=proof)
@@ -22,7 +23,10 @@ try:
         time.sleep(1)
         if process.poll() is not None: raise RuntimeError(f'Player exited: {process.returncode}; see {log_path}')
         if proof.exists() and proof.stat().st_mtime>=started:
-            break
+            text=log_path.read_text(encoding='utf-8',errors='replace')
+            if 'PROOF:' in text:
+                time.sleep(0.5)
+                break
     else: raise RuntimeError(f'No 120-frame proof captured; see {log_path}')
     text=log_path.read_text(encoding='utf-8',errors='replace')
     assert 'Enhanced asset loaded:' in text,'No converted assets loaded'

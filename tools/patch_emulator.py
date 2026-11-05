@@ -142,7 +142,7 @@ def patch():
                           'private void hdOriginal_fillRect(int x, int y, int width, int height)',1)
         wrapper='''
     public void fillRect(int x,int y,int width,int height) {
-        if(Enhancement.SCALE==1) { hdOriginal_fillRect(x,y,width,height); return; }
+        if(Enhancement.SCALE==1 && !GpuRenderer.ENABLED) { hdOriginal_fillRect(x,y,width,height); return; }
         boolean outer=hdSuppress++==0;
         try { hdOriginal_fillRect(x,y,width,height); } finally { hdSuppress--; }
         if(outer) Enhancement.fill(this,x,y,width,height);
@@ -183,7 +183,7 @@ def patch():
             original = declaration.replace('public void '+name, 'private void hdOriginal_'+name)
             text = text[:match.start()] + text[match.start():].replace(declaration, original, 1)
             wrappers.append(declaration + ''' {
-        if (Enhancement.SCALE == 1) { hdOriginal_'''+name+'('+args+'''); return; }
+        if (Enhancement.SCALE == 1 && !GpuRenderer.ENABLED) { hdOriginal_'''+name+'('+args+'''); return; }
         boolean outer = hdSuppress++ == 0;
         try { hdOriginal_'''+name+'('+args+'''); }
         finally { hdSuppress--; }
